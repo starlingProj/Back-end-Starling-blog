@@ -1,59 +1,58 @@
 import express from "express";
-import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
-import mongoose from "mongoose";
-import { validationResult } from "express-validator";
-import 'dotenv/config'
+import multer from "multer";
 
-import { registerValidation } from "./validations/auth.js";
+import {
+  registerValidation,
+  loginValidation,
+  postCreateValidation,
+} from "./validations.js";
+import { connectDB } from "./db/db-connection.js";
+import checkAuth from "./utils/checkAuth.js";
 
-import userModel from "./models/User.js";
+///Routers
+
+import { loginRouter } from "./routers/login-router.js";
+import { registerRouter } from "./routers/register-router.js";
+import { infoMeRouter } from "./routers/info-me-router.js";
+
+//Controllers
+
+import * as PostController from "./controller/PostController.js";
 
 const app = express();
-
-mongoose
-  .connect(process.env.DB_URL  )
-  .then(() => console.log("connection successfull"))
-  .catch((err) => console.log("DB error", err));
+const storage = multer.diskStorage({
+  destination: (req, res, cb) => {
+    cb(null, "uploads");
+  },
+  filename: (req, file, cb) => {
+    console.log(file);
+    cb(null, file.originalname);
+  },
+});
+const upload = multer({ storage });
 
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
-app.post("/auth/register", registerValidation, async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json(errors.array());
-    }
-    const password = req.body.password;
-    const salt = await bcrypt.genSalt();
-    const hash = await bcrypt.hash(password, salt);
-    const doc = new userModel({
-      email: req.body.email,
-      fullName: req.body.fullName,
-      avatarURL: req.body.avatarURL,
-      passwordHash:hash,
-    });
 
-    const user = await doc.save();
-    const {passwordHash, ...userData} = user._doc
-    const token = jwt.sign({
-        _id:user._id
-    }, 'blog2024',{
-        expiresIn:'30d'
-    })  
+app.use("/auth/login", loginValidation, loginRouter);
+app.use("/auth/register", registerValidation, registerRouter);
+app.use("/auth/me", checkAuth, infoMeRouter);
 
-    res.json({
-        ...userData,
-        token
-    });
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({
-      message: "Registration failed",
-    });
-  }
+app.get("/posts", PostController.getAll);
+app.get("/posts/:id", PostController.getOne);
+app.post("/posts", checkAuth, postCreateValidation, PostController.create);
+app.delete("/posts/:id", checkAuth, PostController.remove);
+app.patch("/posts/:id", checkAuth, PostController.update);
+
+app.post("/upload", checkAuth, upload.single("image"), (req, res) => {
+  res.json({
+    url: `/uploads/${req.file}`,
+  });
 });
-
+const startApp = async () => {
+  connectDB();
+};
 app.listen(5000, () => {
-  console.log("Server start");
+  console.log("Server start and listening on port 5000");
 });
+startApp();
