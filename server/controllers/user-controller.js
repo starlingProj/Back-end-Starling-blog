@@ -73,6 +73,7 @@ class UserController {
             });
             return res.json(userData);
         } catch (error) {
+            console.log(error)
             next(error);
         }
     }
